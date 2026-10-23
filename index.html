@@ -98,6 +98,7 @@
   .qty{display:flex;align-items:center;justify-content:center;gap:24px;margin:4px 0}
   .qty button{width:56px;height:56px;border-radius:50%;border:2px solid var(--maroon);background:#fff;color:var(--maroon);font-size:30px;line-height:1}
   .qty b{font-size:28px;min-width:40px;text-align:center}
+  textarea{width:100%;border:2px solid var(--line);border-radius:12px;padding:14px;font:inherit;font-size:16px;background:#fff;color:var(--ink);resize:vertical;-webkit-user-select:text;user-select:text}
   input{width:100%;border:2px solid var(--line);border-radius:12px;padding:14px;font:inherit;font-size:16px;background:#fff;color:var(--ink)}
 
   /* ตะกร้า */
@@ -250,7 +251,7 @@ const BEANS = [
 const THUMB = '<svg class="thumb" viewBox="0 0 24 24"><path d="M2 10h4v11H2zM8 21h9.4a2 2 0 0 0 1.95-1.55l1.6-7A2 2 0 0 0 19 10h-5.2l.8-3.8a2.5 2.5 0 0 0-.7-2.3L13 3 8 8.6z"/></svg>';
 
 /* ============ state ============ */
-let cart = [], user = {userId:"", displayName:""}, sel = null, pickup = "ตอนนี้ (เร็วที่สุด)", sending = false;
+let cart = [], user = {userId:"", displayName:""}, sel = null, pickup = "ตอนนี้ (เร็วที่สุด)", sending = false, mode = "รับที่ร้าน", addr = "", phone = "";
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const baht = n => "฿" + n.toLocaleString("th-TH");
@@ -399,11 +400,24 @@ function cartHTML(){
   if (dsc) h += `<div class="crow promo-row"><div><b>🎉 ส่วนลดสั่ง ${D.cups} แก้ว</b></div><div class="rowr">−${baht(dsc)}</div></div>`;
   else if (D && count() < D.cups) h += `<div class="promo-hint">สั่งอีก ${D.cups - count()} แก้ว ลดทันที ${baht(D.amount)}</div>`;
   h += `<div class="total"><span>รวม</span><span>${baht(total())}</span></div>`;
-  h += `<div class="grp">เวลารับ</div>` + opts(pickupSlots(), pickup, "pickup");
-  h += `<div class="grp">ชื่อสำหรับเรียกรับ</div><input id="cname" maxlength="30" value="${esc(user.displayName)}">`;
+  h += `<div class="grp">รับอย่างไร</div>` + opts([{k:"รับที่ร้าน",label:"🏪 รับที่ร้าน"},{k:"จัดส่ง",label:"🛵 จัดส่ง"}], mode, "mode");
+  const dl = mode === "จัดส่ง";
+  h += `<div class="grp">${dl ? "เวลาจัดส่ง" : "เวลารับ"}</div>` + opts(pickupSlots(), pickup, "pickup");
+  h += `<div class="grp">${dl ? "ชื่อผู้รับ" : "ชื่อสำหรับเรียกรับ"}</div><input id="cname" maxlength="30" value="${esc(user.displayName)}">`;
+  if (dl){
+    h += `<div class="grp">เบอร์โทรผู้รับ</div><input id="cphone" type="tel" inputmode="tel" maxlength="15" placeholder="เช่น 0812345678" value="${esc(phone)}">`;
+    h += `<div class="grp">ที่อยู่จัดส่ง</div><textarea id="caddr" rows="3" maxlength="200" placeholder="บ้านเลขที่ ซอย ถนน จุดสังเกต">${esc(addr)}</textarea>`;
+    h += `<div class="promo-hint">ค่าจัดส่งร้านจะแจ้งยืนยันทางโทรศัพท์/แชทอีกครั้ง</div>`;
+  }
   h += `<button class="btn center" id="sendBtn" style="margin-top:16px">ยืนยันสั่งซื้อ</button>`;
   h += `<button class="btn ghost" id="backBtn">กลับไปเลือกเมนู</button>`;
   return h;
+}
+function keepForm(root){
+  const g = id => root.querySelector(id);
+  if (g("#cname")) user.displayName = g("#cname").value;
+  if (g("#cphone")) phone = g("#cphone").value;
+  if (g("#caddr")) addr = g("#caddr").value;
 }
 function bindCart(root){
   root.querySelectorAll(".mini button").forEach(b => b.onclick = () => {
@@ -411,7 +425,11 @@ function bindCart(root){
     if (cart[k].qty <= 0) cart.splice(k, 1);
     refresh();
   });
-  root.querySelectorAll(".opt").forEach(b => b.onclick = () => { buzz(); const n = root.querySelector("#cname"); if (n) user.displayName = n.value; pickup = b.dataset.v; drawCart(); });
+  root.querySelectorAll(".opt").forEach(b => b.onclick = () => {
+    buzz(); keepForm(root);
+    if (b.dataset.k === "mode") mode = b.dataset.v; else pickup = b.dataset.v;
+    drawCart();
+  });
   const bb = root.querySelector("#backBtn"); if (bb) bb.onclick = () => $("ovCart").classList.remove("show");
   const sb = root.querySelector("#sendBtn"); if (sb) sb.onclick = () => submit(root);
 }
@@ -437,16 +455,23 @@ $("cartBtn").onclick = () => { drawCart(); $("ovCart").classList.add("show"); };
 // ข้อความสรุปที่ส่งเข้าแชทในนามลูกค้า (ใช้ liff.sendMessages ไม่นับโควตาข้อความของ OA)
 function chatSummary(p){
   const lines = p.items.map(it => "• " + it.name + " × " + it.qty + (it.detail ? " (" + it.detail + ")" : "") + "  " + baht(it.unitPrice * it.qty));
-  return ["☕ สั่งเครื่องดื่ม YO! PRESSO", "ชื่อ: " + p.customerName, "เวลารับ: " + p.pickup, "", ...lines, ...(p.discount ? ["ส่วนลด −" + baht(p.discount)] : []), "", "รวม " + baht(p.total)].join("\n");
+  return ["☕ สั่งเครื่องดื่ม YO! PRESSO", "ชื่อ: " + p.customerName, p.mode + (p.mode === "จัดส่ง" ? " · เวลาส่ง: " : " · เวลารับ: ") + p.pickup, ...(p.mode === "จัดส่ง" ? ["โทร: " + p.phone, "ที่อยู่: " + p.address] : []), "", ...lines, ...(p.discount ? ["ส่วนลด −" + baht(p.discount)] : []), "", "รวม " + baht(p.total)].join("\n");
 }
 
 async function submit(root){
   if (sending) return;
   const name = (root.querySelector("#cname").value || "").trim() || "ลูกค้า";
+  keepForm(root);
+  const dl = mode === "จัดส่ง";
+  if (dl){
+    const ph = phone.replace(/[^0-9]/g, "");
+    if (ph.length < 9){ alert("กรุณากรอกเบอร์โทรผู้รับให้ถูกต้อง"); return; }
+    if (addr.trim().length < 8){ alert("กรุณากรอกที่อยู่จัดส่งให้ครบ"); return; }
+  }
   sending = true;
   const btn = root.querySelector("#sendBtn"); btn.disabled = true; btn.textContent = "กำลังส่ง...";
   const payload = {
-    userId: user.userId, customerName: name, pickup,
+    userId: user.userId, customerName: name, pickup, mode, phone: dl ? phone.trim() : "", address: dl ? addr.trim() : "",
     items: cart.map(s => ({name: lineName(s), detail: lineDetail(s), qty: s.qty, unitPrice: unit(s)})),
     discount: discountAmt(), total: total()
   };
@@ -463,7 +488,7 @@ async function submit(root){
       }
     } catch(e){ console.warn("sendMessages ไม่สำเร็จ:", e); }
     cart = [];
-    const done = `<div class="done"><div style="font-size:56px">☕</div><h2>ส่งออเดอร์แล้ว</h2><p>ร้านได้รับออเดอร์ของคุณ ${esc(name)} แล้ว${sentToChat ? "<br>สรุปออเดอร์ส่งไว้ในแชทนี้แล้ว" : ""}</p><button class="btn center" id="closeBtn">ปิด</button></div>`;
+    const done = `<div class="done"><div style="font-size:56px">☕</div><h2>ส่งออเดอร์แล้ว</h2><p>ร้านได้รับออเดอร์ของคุณ ${esc(name)} แล้ว${dl ? "<br>ร้านจะติดต่อยืนยันค่าจัดส่งอีกครั้ง" : ""}${sentToChat ? "<br>สรุปออเดอร์ส่งไว้ในแชทนี้แล้ว" : ""}</p><button class="btn center" id="closeBtn">ปิด</button></div>`;
     $("cartPane").innerHTML = done; $("cartSheet").innerHTML = done; $("ovCart").classList.add("show");
     renderMenu(); updateBar();
     document.querySelectorAll("#closeBtn").forEach(b => b.onclick = () => {
